@@ -1,0 +1,39 @@
+{
+  "name": "automatization",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IgnacioMonts/Automatization.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/IgnacioMonts/Automatization/issues"
+  },
+  "homepage": "https://github.com/IgnacioMonts/Automatization#readme",
+  "dependencies": {
+    "@fastify/formbody": "^9.0.0",
+    "better-sqlite3": "^13.0.3",
+    "cloudinary": "^2.11.0",
+    "dotenv": "^18.0.1",
+    "fastify": "^5.12.5",
+    "fastify-raw-body": "^6.0.1",
+    "openai": "^7.20.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

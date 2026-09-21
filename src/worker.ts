@@ -1,0 +1,153 @@
+import "dotenv/config";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+
+import db from "./db.js";
+import cloudinary from "./cloudinary.js";
+import { generateCurtainImage } from "./image-generator.js";
+
+const BASE_IMAGE_PUBLIC_ID =
+  "home/cortinas/base/WhatsApp_Image_2026-09-20_at_8.15.01_PM";
+
+async function downloadCloudinaryImage(
+  publicId: string,
+  destination: string
+): Promise<void> {
+  const url = cloudinary.url(publicId, {
+    secure: true,
+  });
+
+  console.log(`⬇️ Descargando: ${publicId}`);
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `No se pudo descargar ${publicId}: HTTP ${response.status}`
+    );
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+
+  await fs.writeFile(destination, buffer);
+}
+
+async function processImage(image: any): Promise<void> {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "cortinas-")
+  );
+
+  const basePath = path.join(tempDir, "base.png");
+  const curtainPath = path.join(tempDir, "curtain.png");
+  const outputPath = path.join(tempDir, "result.png");
+
+  try {
+    db.prepare(`
+      UPDATE images
+      SET
+        status = 'processing',
+        attempts = attempts + 1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(image.id);
+
+    console.log(`\n🖼️ Procesando imagen #${image.id}`);
+    console.log(`   Cortina: ${image.public_id}`);
+
+    await downloadCloudinaryImage(
+      BASE_IMAGE_PUBLIC_ID,
+      basePath
+    );
+
+    await downloadCloudinaryImage(
+      image.public_id,
+      curtainPath
+    );
+
+    console.log("🤖 Enviando imágenes a OpenAI...");
+
+    const result = await generateCurtainImage(
+      basePath,
+      curtainPath
+    );
+
+    await fs.writeFile(outputPath, result);
+
+    console.log("☁️ Subiendo resultado a Cloudinary...");
+
+    const outputPublicId =
+      `home/cortinas/generadas/${image.public_id
+        .split("/")
+        .pop()}`;
+
+    const uploadResult = await cloudinary.uploader.upload(
+      outputPath,
+      {
+        public_id: outputPublicId,
+        resource_type: "image",
+        overwrite: true,
+      }
+    );
+
+    db.prepare(`
+      UPDATE images
+      SET
+        status = 'completed',
+        output_public_id = ?,
+        output_secure_url = ?,
+        error = NULL,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      uploadResult.public_id,
+      uploadResult.secure_url,
+      image.id
+    );
+
+    console.log("✅ PROCESAMIENTO COMPLETADO");
+    console.log(`   Resultado: ${uploadResult.secure_url}`);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.error("❌ ERROR:", message);
+
+    db.prepare(`
+      UPDATE images
+      SET
+        status = 'failed',
+        error = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(message, image.id);
+  } finally {
+    await fs.rm(tempDir, {
+      recursive: true,
+      force: true,
+    });
+  }
+}
+
+export async function processPendingImages(): Promise<void> {
+  const images = db
+    .prepare(`
+      SELECT *
+      FROM images
+      WHERE status = 'pending'
+      ORDER BY id ASC
+    `)
+    .all();
+
+  if (images.length === 0) {
+    console.log("📭 No hay imágenes pendientes");
+    return;
+  }
+
+  console.log(`📋 ${images.length} imagen(es) pendientes`);
+
+  for (const image of images) {
+    await processImage(image);
+  }
