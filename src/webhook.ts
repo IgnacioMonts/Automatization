@@ -96,6 +96,7 @@ export async function registerWebhook(app: FastifyInstance) {
     const assetId = payload?.asset_id;
     const publicId = payload?.public_id;
     const secureUrl = payload?.secure_url;
+    
 
     if (!assetId || !publicId || !secureUrl) {
       return reply.code(400).send({

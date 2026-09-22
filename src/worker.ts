@@ -8,7 +8,7 @@ import cloudinary from "./cloudinary.js";
 import { generateCurtainImage } from "./image-generator.js";
 
 const BASE_IMAGE_PUBLIC_ID =
-  "home/cortinas/base/WhatsApp_Image_2026-09-20_at_8.15.01_PM";
+  "WhatsApp_Image_2026-09-20_at_8.15.01_PM";
 
 async function downloadCloudinaryImage(
   publicId: string,
@@ -151,3 +151,9 @@ export async function processPendingImages(): Promise<void> {
   for (const image of images) {
     await processImage(image);
   }
+}
+
+processPendingImages().catch((error) => {
+  console.error("❌ Error fatal del worker:", error);
+  process.exit(1);
+});
