@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import crypto from "crypto";
 import db from "./db.js";
+import {
+  processPendingImages,
+  BASE_IMAGE_PUBLIC_ID,
+} from "./worker.js";
+
+const GENERATED_PREFIX = "cortinas/generadas/";
+const BASE_FOLDER_PREFIX = "cortinas/base/";
 
 function verifyCloudinarySignature(
   rawBody: string,
@@ -105,6 +112,22 @@ export async function registerWebhook(app: FastifyInstance) {
       });
     }
 
+    if (
+      publicId.startsWith(GENERATED_PREFIX) ||
+      publicId.startsWith(BASE_FOLDER_PREFIX) ||
+      publicId === BASE_IMAGE_PUBLIC_ID
+    ) {
+      console.log(
+        "ℹ️ Asset base o generado ignorado:",
+        publicId
+      );
+
+      return reply.send({
+        ok: true,
+        status: "skipped",
+      });
+    }
+
     const existing = db
       .prepare("SELECT id FROM images WHERE asset_id = ?")
       .get(assetId);
@@ -137,6 +160,10 @@ export async function registerWebhook(app: FastifyInstance) {
     console.log(`   Public ID: ${publicId}`);
     console.log(`   Asset ID:  ${assetId}`);
     console.log(`   Status:    pending`);
+
+    processPendingImages().catch((error) => {
+      console.error("❌ Error procesando tras el webhook:", error);
+    });
 
     return reply.code(201).send({
       ok: true,

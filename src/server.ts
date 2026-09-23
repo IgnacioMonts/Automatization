@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import "dotenv/config";
 import db from "./db.js";
 import { registerWebhook } from "./webhook.js";
+import { startWorker } from "./worker.js";
 
 const app = Fastify({
   logger: true,
@@ -32,6 +33,8 @@ app.get("/images", async () => {
 });
 
 await registerWebhook(app);
+
+startWorker();
 
 const port = Number(process.env.PORT ?? 3000);
 

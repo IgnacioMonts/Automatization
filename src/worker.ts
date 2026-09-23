@@ -7,8 +7,10 @@ import db from "./db.js";
 import cloudinary from "./cloudinary.js";
 import { generateCurtainImage } from "./image-generator.js";
 
-const BASE_IMAGE_PUBLIC_ID =
+export const BASE_IMAGE_PUBLIC_ID =
   "WhatsApp_Image_2026-09-20_at_8.15.01_PM";
+
+let running = false;
 
 async function downloadCloudinaryImage(
   publicId: string,
@@ -76,15 +78,15 @@ async function processImage(image: any): Promise<void> {
 
     console.log("☁️ Subiendo resultado a Cloudinary...");
 
-    const outputPublicId =
-      `home/cortinas/generadas/${image.public_id
-        .split("/")
-        .pop()}`;
+    const originalName =
+      image.public_id.split("/").pop() ?? "resultado";
+    const outputStem = originalName.replace(/\.[^/.]+$/, "");
 
     const uploadResult = await cloudinary.uploader.upload(
       outputPath,
       {
-        public_id: outputPublicId,
+        folder: "cortinas/generadas",
+        public_id: outputStem,
         resource_type: "image",
         overwrite: true,
       }
@@ -132,28 +134,49 @@ async function processImage(image: any): Promise<void> {
 }
 
 export async function processPendingImages(): Promise<void> {
-  const images = db
-    .prepare(`
-      SELECT *
-      FROM images
-      WHERE status = 'pending'
-      ORDER BY id ASC
-    `)
-    .all();
-
-  if (images.length === 0) {
-    console.log("📭 No hay imágenes pendientes");
+  if (running) {
+    console.log(
+      "⏳ Worker ya está procesando, se omite esta ejecución"
+    );
     return;
   }
 
-  console.log(`📋 ${images.length} imagen(es) pendientes`);
+  running = true;
 
-  for (const image of images) {
-    await processImage(image);
+  try {
+    const images = db
+      .prepare(`
+        SELECT *
+        FROM images
+        WHERE status = 'pending'
+        ORDER BY id ASC
+      `)
+      .all();
+
+    if (images.length === 0) {
+      console.log("📭 No hay imágenes pendientes");
+      return;
+    }
+
+    console.log(`📋 ${images.length} imagen(es) pendientes`);
+
+    for (const image of images) {
+      await processImage(image);
+    }
+  } finally {
+    running = false;
   }
 }
 
-processPendingImages().catch((error) => {
-  console.error("❌ Error fatal del worker:", error);
-  process.exit(1);
-});
+export function startWorker(intervalMs = 5000): void {
+  console.log("🚀 Worker de procesamiento iniciado");
+
+  const run = () => {
+    processPendingImages().catch((error) => {
+      console.error("❌ Error fatal del worker:", error);
+    });
+  };
+
+  run();
+  setInterval(run, intervalMs);
+}
