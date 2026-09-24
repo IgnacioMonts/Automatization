@@ -10,6 +10,11 @@ import { generateCurtainImage } from "./image-generator.js";
 export const BASE_IMAGE_PUBLIC_ID =
   "WhatsApp_Image_2026-09-20_at_8.15.01_PM";
 
+const MAX_ATTEMPTS = 5;
+const RETRY_BASE_DELAY_SECONDS = 30;
+const RETRY_MAX_DELAY_SECONDS = 3600;
+const PROCESSING_TIMEOUT_MINUTES = 15;
+
 let running = false;
 
 async function downloadCloudinaryImage(
@@ -25,14 +30,43 @@ async function downloadCloudinaryImage(
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       `No se pudo descargar ${publicId}: HTTP ${response.status}`
-    );
+    ) as Error & { status?: number };
+
+    error.status = response.status;
+
+    throw error;
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
 
   await fs.writeFile(destination, buffer);
+}
+
+function retryDelaySeconds(newAttempt: number): number {
+  return Math.min(
+    RETRY_BASE_DELAY_SECONDS * 2 ** (newAttempt - 1),
+    RETRY_MAX_DELAY_SECONDS
+  );
+}
+
+function isTransientError(error: unknown): boolean {
+  const status = (error as any)?.status;
+
+  if (status === 429) {
+    return true;
+  }
+
+  if (typeof status === "number" && status >= 500) {
+    return true;
+  }
+
+  if (status === undefined) {
+    return true;
+  }
+
+  return false;
 }
 
 async function processImage(image: any): Promise<void> {
@@ -99,6 +133,7 @@ async function processImage(image: any): Promise<void> {
         output_public_id = ?,
         output_secure_url = ?,
         error = NULL,
+        next_retry_at = NULL,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -115,13 +150,29 @@ async function processImage(image: any): Promise<void> {
         ? error.message
         : String(error);
 
+    const nextAttempt = image.attempts + 1;
+    const transient = isTransientError(error);
+    const canRetry = transient && nextAttempt < MAX_ATTEMPTS;
+    const delaySeconds = retryDelaySeconds(nextAttempt);
+
     console.error("❌ ERROR:", message);
+    console.error(
+      `   Intento ${nextAttempt}/${MAX_ATTEMPTS}` +
+        (canRetry
+          ? ` → reintento en ${delaySeconds}s`
+          : " → sin reintento")
+    );
 
     db.prepare(`
       UPDATE images
       SET
         status = 'failed',
         error = ?,
+        next_retry_at = ${
+          canRetry
+            ? `datetime('now', '+${delaySeconds} seconds')`
+            : "NULL"
+        },
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(message, image.id);
@@ -144,14 +195,36 @@ export async function processPendingImages(): Promise<void> {
   running = true;
 
   try {
+    const recovered = db
+      .prepare(`
+        UPDATE images
+        SET
+          status = 'pending',
+          error = 'Recuperada tras reinicio',
+          updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'processing'
+          AND datetime(updated_at) < datetime('now', ?)
+      `)
+      .run(`-${PROCESSING_TIMEOUT_MINUTES} minutes`);
+
+    if (recovered.changes > 0) {
+      console.log(
+        `♻️ ${recovered.changes} imagen(es) atascada(s) en 'processing' recuperadas`
+      );
+    }
+
     const images = db
       .prepare(`
         SELECT *
         FROM images
         WHERE status = 'pending'
+           OR (status = 'failed'
+               AND attempts < ?
+               AND (next_retry_at IS NULL
+                    OR datetime(next_retry_at) <= datetime('now')))
         ORDER BY id ASC
       `)
-      .all();
+      .all(MAX_ATTEMPTS);
 
     if (images.length === 0) {
       console.log("📭 No hay imágenes pendientes");

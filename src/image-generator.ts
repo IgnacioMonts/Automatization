@@ -41,18 +41,28 @@ export async function generateCurtainImage(
   const baseImage = await fs.readFile(baseImagePath);
   const curtainImage = await fs.readFile(curtainImagePath);
 
-  const response = await openai.images.edit({
-    model: "gpt-image-2",
-    image: [
-      new File([baseImage], path.basename(baseImagePath), {
-        type: "image/png",
-      }),
-      new File([curtainImage], path.basename(curtainImagePath), {
-        type: "image/png",
-      }),
-    ],
-    prompt: PROMPT,
-  });
+  const response = await openai.images.edit(
+    {
+      model: process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-2",
+      image: [
+        new File([baseImage], path.basename(baseImagePath), {
+          type: "image/png",
+        }),
+        new File([curtainImage], path.basename(curtainImagePath), {
+          type: "image/png",
+        }),
+      ],
+      prompt: PROMPT,
+      quality:
+        (process.env.OPENAI_IMAGE_QUALITY as
+          | "low"
+          | "medium"
+          | "high"
+          | "auto"
+          | null) ?? "high",
+    },
+    { timeout: 120000, maxRetries: 2 }
+  );
 
   const imageBase64 = response.data?.[0]?.b64_json;
 
