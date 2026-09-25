@@ -41,6 +41,10 @@ export async function generateCurtainImage(
   const baseImage = await fs.readFile(baseImagePath);
   const curtainImage = await fs.readFile(curtainImagePath);
 
+  const qualityEnv = process.env.OPENAI_IMAGE_QUALITY;
+  const quality = (["low", "medium", "high", "auto"] as const)
+    .find((q) => q === qualityEnv);
+
   const response = await openai.images.edit(
     {
       model: process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-2",
@@ -53,13 +57,7 @@ export async function generateCurtainImage(
         }),
       ],
       prompt: PROMPT,
-      quality:
-        (process.env.OPENAI_IMAGE_QUALITY as
-          | "low"
-          | "medium"
-          | "high"
-          | "auto"
-          | null) ?? "high",
+      ...(quality ? { quality } : {}),
     },
     { timeout: 120000, maxRetries: 2 }
   );
