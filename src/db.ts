@@ -1,6 +1,12 @@
 import Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
 
-const db = new Database("data/cortinas.db");
+const dbPath = process.env.DB_PATH ?? "data/cortinas.db";
+
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+const db = new Database(dbPath);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS images (

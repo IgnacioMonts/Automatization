@@ -22,6 +22,20 @@ app.get("/", async () => {
   };
 });
 
+app.get("/health", async () => {
+  return {
+    ok: true,
+    uptime: process.uptime(),
+    pending: (db
+      .prepare(`
+        SELECT COUNT(*) AS n
+        FROM images
+        WHERE status = 'pending'
+      `)
+      .get() as { n: number }).n,
+  };
+});
+
 app.get("/images", async () => {
   return db
     .prepare(`
