@@ -59,7 +59,7 @@ export async function generateCurtainImage(
       prompt: PROMPT,
       ...(quality ? { quality } : {}),
     },
-    { timeout: 120000, maxRetries: 2 }
+    { timeout: 120000, maxRetries: 0 }
   );
 
   const imageBase64 = response.data?.[0]?.b64_json;
